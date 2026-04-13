@@ -245,26 +245,86 @@ static int w2let(const char *u, int *o, int mx) {
     while(*p&&n<mx){int a;int l=u8let(p,&a);if(l>=0)o[n++]=l;p+=a;} return n;
 }
 
-static int re_find_root(RootEng *r, const int *let, int n) {
-    if(n<2) return -1;
-    int best=-1, bs=999, bspan=999;
+/* Hebrew prefix/suffix stripping (from pitomadom.go root lexicon) */
+/* Prefixes: והת, הת, וה, של, וב, וכ, ול, ומ, וש, ה, ב, כ, ל, מ, ש, ו, נ, י, ת, א */
+/* Suffixes: ים, ות, ית, ני, הם, הן, כם, כן, ה, ת, י, ך, ם, ן */
+
+static int strip_prefix(const int *let, int n) {
+    if(n<4) goto single;
+    /* 3-letter: והת */
+    if(let[0]==5&&let[1]==4&&let[2]==21 && n-3>=2) return 3;
+    /* 2-letter prefixes */
+    if(n-2>=2){
+        int a=let[0],b=let[1];
+        if((a==4&&b==21)||(a==5&&b==4)||(a==20&&b==11)||
+           (a==5&&b==1)||(a==5&&b==10)||(a==5&&b==11)||
+           (a==5&&b==12)||(a==5&&b==20)) return 2;
+    }
+single:
+    if(n<3) return 0;
+    /* 1-letter prefixes: ה(4) ב(1) כ(10) ל(11) מ(12) ש(20) ו(5) נ(13) י(9) ת(21) א(0) */
+    {int f=let[0];
+     if(f==4||f==1||f==10||f==11||f==12||f==20||f==5||f==13||f==9||f==21||f==0)
+        if(n-1>=2) return 1;}
+    return 0;
+}
+
+static int strip_suffix(const int *let, int n) {
+    if(n<4) goto single_s;
+    /* 2-letter suffixes: ים, ות, ית, ני, הם, הן, כם, כן */
+    if(n-2>=2){
+        int a=let[n-2],b=let[n-1];
+        if((a==9&&b==12)||(a==5&&b==21)||(a==9&&b==21)||(a==13&&b==9)||
+           (a==4&&b==12)||(a==4&&b==13)||(a==10&&b==12)||(a==10&&b==13))
+            return 2;
+    }
+single_s:
+    if(n<3) return 0;
+    /* 1-letter suffixes: ה(4) ת(21) י(9) ך(10) ם(12) ן(13) */
+    {int l=let[n-1];
+     if(l==4||l==21||l==9||l==10||l==12||l==13)
+        if(n-1>=2) return 1;}
+    return 0;
+}
+
+static int subseq_match(RootEng *r, const int *let, int n) {
+    /* Subsequence match preferring TIGHTEST SPAN (not earliest start) */
+    int best=-1, bspan=999;
     for(int ri=0;ri<r->nr;ri++){
         int t[3]={r->roots[ri].c[0],r->roots[ri].c[1],r->roots[ri].c[2]};
         int pos[3]={-1,-1,-1}; int ti=0;
         for(int i=0;i<n&&ti<3;i++) if(let[i]==t[ti]){pos[ti]=i;ti++;}
-        if(ti==3){int s=pos[0],sp=pos[2]-pos[0];
-            if(s<bs||(s==bs&&sp<bspan)){bs=s;bspan=sp;best=ri;}}
+        if(ti==3){int sp=pos[2]-pos[0];
+            if(sp<bspan){bspan=sp;best=ri;}}
     }
-    if(best>=0) return best;
-    /* Heuristic fallback: strip prefix, take 3 */
-    int start=0;
-    if(n>=4 && ((let[0]==5&&let[1]==4)||(let[0]==4&&let[1]==21)||(let[0]==20&&let[1]==11))) start=2;
-    else if(n>=3){int f=let[0];
-        if(f==4||f==1||f==10||f==11||f==12||f==20||f==5||f==13||f==9||f==21||f==0) start=1;}
-    int s[32]; int sn=0; for(int i=start;i<n&&sn<32;i++) s[sn++]=let[i];
-    if(sn<2) return -1;
-    if(sn==2) return re_add_root(r,s[0],s[1],s[1]);
-    return re_add_root(r,s[0],s[1],s[2]);
+    return best;
+}
+
+static int re_find_root(RootEng *r, const int *let, int n) {
+    if(n<2) return -1;
+
+    /* Step 1: Strip prefix + suffix */
+    int pstrip = strip_prefix(let, n);
+    const int *stripped = let + pstrip;
+    int sn = n - pstrip;
+    int sstrip = strip_suffix(stripped, sn);
+    sn -= sstrip;
+
+    /* Step 2: Try subsequence match on STRIPPED word first */
+    if(sn>=2){
+        int m = subseq_match(r, stripped, sn);
+        if(m>=0) return m;
+    }
+
+    /* Step 3: Try subsequence match on full word (handles edge cases) */
+    {int m = subseq_match(r, let, n);
+     if(m>=0) return m;}
+
+    /* Step 4: Heuristic fallback — take first 3 consonants of stripped */
+    if(sn>=3) return re_add_root(r, stripped[0], stripped[1], stripped[2]);
+    if(sn==2) return re_add_root(r, stripped[0], stripped[1], stripped[1]);
+
+    return -1;
 }
 
 static int re_add_word(RootEng *r, const char *u) {

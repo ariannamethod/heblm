@@ -1,0 +1,7 @@
+shoresh
+shoresh_min
+*.bin
+*.o
+shoresh_combined.txt
+shoresh_expanded_*.txt
+shoresh_original.txt
