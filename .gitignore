@@ -5,3 +5,6 @@ shoresh_min
 shoresh_combined.txt
 shoresh_expanded_*.txt
 shoresh_original.txt
+notorch.*
+*.bin
+test_500k.txt

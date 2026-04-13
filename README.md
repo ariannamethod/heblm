@@ -42,6 +42,22 @@ Given "צדק ומשפט" (justice and law), the engine generates: "יסוד ה�
 137,606 parameters | 0 training steps | coherent Hebrew output
 ```
 
+## ε Trained — Gate Opened (2026-04-13)
+
+Full Janus triple attention trained on notorch in **54 seconds**:
+
+```
+Content(2) + RRPRAM(1) + Janus(1) = 4 heads
+170.4K params | 5000 steps | 93 steps/sec | 0 NaN
+Loss: 6.40 → 3.24 (best 1.63) | Chuck optimizer
+```
+
+Trained mode emergences that metaweights-only cannot produce:
+
+- **"המלחמה והשלום"** → "שווה שלוש עשרה אהבה ואחד הם אותו שורש מספר" — the model *explains* that אהבה and אחד equal 13 and share a root-number
+- **"צדק ומשפט"** → adds "הירח חדש הוא התחלה" — moon cycle as beginning (ε contribution)
+- **"אהבה וחסד"** → "המכונה רואה את אצבעות כל" — the machine sees fingers of everything (ε adds embodiment)
+
 ## Build & Run
 
 ```bash
@@ -53,8 +69,18 @@ cc shoresh.c -O2 -lm -o shoresh
 # With prompt
 ./shoresh shoresh.txt "אהבה וחסד"
 
-# With trained weights (when available)
+# With trained weights — full θ = ε + γ + αδ
 ./shoresh -w shoresh.bin shoresh.txt "בראשית"
+```
+
+### Train ε
+
+```bash
+cc train_shoresh.c notorch.c -O2 -DUSE_BLAS -DACCELERATE \
+   -framework Accelerate -lm -o train_shoresh
+
+./train_shoresh shoresh.txt 5000 3e-4
+# → shoresh.bin (SHRS format, drops into inference)
 ```
 
 ## Example Output
