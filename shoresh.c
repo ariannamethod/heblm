@@ -48,6 +48,7 @@
 
 #define HEB         22
 #define MAX_ROOTS   512
+#define ROOT_LIMIT  200     /* active roots for training/generation (ceiling: MAX_ROOTS) */
 #define MAX_WORDS   8192
 #define MAX_CWORDS  200000
 #define MAX_RWORDS  64
@@ -177,7 +178,7 @@ static void re_init(RootEng *r){memset(r,0,sizeof(*r));memset(r->rhash,-1,sizeof
 static int re_add_root(RootEng *r, int c1, int c2, int c3) {
     if(c1<0||c2<0||c3<0) return -1;
     int k=rhkey(c1,c2,c3); if(r->rhash[k]>=0) return r->rhash[k];
-    if(r->nr>=MAX_ROOTS) return -1;
+    if(r->nr>=ROOT_LIMIT) return -1;
     int id=r->nr++; r->roots[id].c[0]=c1;r->roots[id].c[1]=c2;r->roots[id].c[2]=c3;
     r->rhash[k]=id; return id;
 }
@@ -449,7 +450,7 @@ static float *alloc_f(int n) {
 static void tf_init(TF *t, int V) {
     memset(t, 0, sizeof(*t));
     t->V = V; t->loaded = 0;
-    t->tok = alloc_f(MAX_ROOTS * DIM);
+    t->tok = alloc_f(V * DIM);
     t->pos = alloc_f(CTX * DIM);
     for(int l=0;l<N_LAYERS;l++){
         TFLayer *ly = &t->L[l];
@@ -848,7 +849,7 @@ static int tf_load(TF *t, const char *path) {
     unsigned int magic; fread(&magic,4,1,f);
     if(magic != SHORESH_MAGIC){fclose(f);return 0;}
     /* Read all weight tensors */
-    fread(t->tok, sizeof(float), MAX_ROOTS*DIM, f);
+    fread(t->tok, sizeof(float), t->V*DIM, f);
     fread(t->pos, sizeof(float), CTX*DIM, f);
     for(int l=0;l<N_LAYERS;l++){
         TFLayer *ly=&t->L[l];
@@ -874,7 +875,7 @@ static int tf_load(TF *t, const char *path) {
 static void tf_save(TF *t, const char *path) {
     FILE *f=fopen(path,"wb"); if(!f) return;
     unsigned int magic=SHORESH_MAGIC; fwrite(&magic,4,1,f);
-    fwrite(t->tok,sizeof(float),MAX_ROOTS*DIM,f);
+    fwrite(t->tok,sizeof(float),t->V*DIM,f);
     fwrite(t->pos,sizeof(float),CTX*DIM,f);
     for(int l=0;l<N_LAYERS;l++){
         TFLayer *ly=&t->L[l];
@@ -917,7 +918,7 @@ typedef struct {
 
 static TParams tp_init(int V) {
     TParams p;
-    p.tok = nt_tensor_new2d(MAX_ROOTS, DIM); nt_tensor_xavier(p.tok, DIM, MAX_ROOTS);
+    p.tok = nt_tensor_new2d(V, DIM); nt_tensor_xavier(p.tok, DIM, V);
     p.pos = nt_tensor_new2d(CTX, DIM); nt_tensor_xavier(p.pos, CTX, DIM);
     for(int l=0;l<N_LAYERS;l++){
         TParams_L *ly = &p.L[l];
@@ -1003,10 +1004,10 @@ static int forward_train(TI *ti, int *tokens, int *targets, int T, int V) {
     return nt_seq_cross_entropy(logits, tgt_idx, T, V);
 }
 
-static void tp_save(TParams *p, const char *path) {
+static void tp_save(TParams *p, const char *path, int V) {
     FILE *f=fopen(path,"wb"); if(!f) return;
     unsigned magic=SHORESH_MAGIC; fwrite(&magic,4,1,f);
-    fwrite(p->tok->data,4,MAX_ROOTS*DIM,f);
+    fwrite(p->tok->data,4,V*DIM,f);
     fwrite(p->pos->data,4,CTX*DIM,f);
     for(int l=0;l<N_LAYERS;l++){
         TParams_L *ly=&p->L[l];
@@ -1059,12 +1060,12 @@ static void shoresh_train(TParams *p, int *corpus, int n_tok, int V,
             printf("  step %5d | train %.4f | ema %.4f | best %.4f | lr %.2e | %.1fs\n",
                    step, lv, loss_ema, best_loss, clr, el);
         }
-        if(step>0 && step%1000==0) tp_save(p, save_path);
+        if(step>0 && step%1000==0) tp_save(p, save_path, V);
     }
     double total=(double)(clock()-t0)/CLOCKS_PER_SEC;
     printf("  Done: ema %.4f, best %.4f, %.1fs (%.1f steps/s)\n",
            loss_ema, best_loss, total, (double)steps/total);
-    tp_save(p, save_path);
+    tp_save(p, save_path, V);
 }
 
 #endif /* SHORESH_TRAIN */
@@ -1094,7 +1095,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    const char *wpath=NULL, *cpath=NULL, *prompt=NULL;
+const char *wpath=NULL, *cpath=NULL, *prompt=NULL;
 #ifdef SHORESH_TRAIN
     int do_train=0; int train_steps=5000; const char *save_path="shoresh.bin";
 #endif
@@ -1156,7 +1157,7 @@ int main(int argc, char **argv) {
 
 #ifdef SHORESH_TRAIN
     if(do_train){
-        printf("\n[TRAIN] Training ε on root sequence...\n");
+        printf("\n[TRAIN] Training ε on root sequence (V=%d, vn=%d)...\n", re->nr, vn);
         TParams tp = tp_init(re->nr);
         nt_seed((unsigned)time(NULL));
         shoresh_train(&tp, vr, vn, re->nr, train_steps, 3e-4f, save_path);
