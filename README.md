@@ -2,145 +2,139 @@
 
 **θ = ε + γ + αδ**
 
-A Hebrew AI that reads, generates, and counts through **3-letter roots** (שורשים) — the atomic semantic units of the Hebrew language. 137.6K parameters. Zero training. Coherent Hebrew from pure resonance.
+A Hebrew AI that reads and generates through **3-letter roots** (שורשים) using Semantic BPE — frequent roots as atomic tokens, rare roots as character sequences, 100% coverage. 1.33M parameters. Trained on Hebrew literature. Generates literary Hebrew.
 
-## What It Does
-
-Given "חכמה ובינה" (wisdom and understanding), the engine auto-completes "ודעת" (and knowledge) — the Kabbalistic triple — from pure statistical resonance between roots. No one programmed this. The trigram field between roots ח.כ.מ, ב.נ.ה, and י.ד.ע is charged because in Hebrew tradition they always appear together. The model doesn't know Kabbalah. It rediscovered it from corpus statistics.
-
-Given "צדק ומשפט" (justice and law), the engine generates: "יסוד הכסא אמת... אמת אלף מם תיו... כי אמת חזקה" — the foundation of the throne is truth... truth is alef-mem-tav... because truth is strong. It spelled out the letters of אמת and stated that truth spans beginning, middle, and end of the alphabet. From a 71KB corpus.
-
-## Architecture
-
-7 levels, each building on the previous:
-
-| Level | Name | What it does |
-|-------|------|-------------|
-| 1 | **Root Engine** | Hebrew text → 3-letter roots. Prefix/suffix stripping + subsequence matching against 512 known roots |
-| 2 | **MetaWeights (γ)** | Statistical field: bigram + trigram + Hebbian co-occurrence between roots. Built from corpus at startup, updated online during generation |
-| 3 | **Janus Triple Attention (ε)** | 2 Content heads (QKV) + 1 RRPRAM (positional routing) + 1 Janus Echo (W^T·W self-resonance). Learned gating between mechanisms |
-| 4 | **Transformer Gate** | Untrained weights → small logit magnitude → gate ≈ 0 → transformer silent. Trained weights → gate opens. Enables weightless operation |
-| 5 | **Klaus Chambers (δ)** | 6 Kuramoto-coupled somatic oscillators: FEAR, LOVE, RAGE, VOID, FLOW, CMPLX. Root families mapped to chambers. Chambers modulate metaweight coefficients |
-| 6 | **Word Realization** | Root → surface word via character-level bigram field + frequency scoring |
-| 7 | **Generation Chain** | 12-step bidirectional chain. Calendar drift (Hebrew-Gregorian) determines backward/forward balance |
-
-### The Dario Equation
+## Generation Examples (v3, trained on Ben-Yehuda)
 
 ```
-θ = ε + γ + αδ
+Prompt: בראשית
+Gen:    מתושלח בהשתובבותו כהתמתקבצים ומתנודדים והביאוה בדמעותיך
+        בכמתקצף ותמשכהו חלונותיו התיחסותו שהצרכים ובילדים ויאמרו
+        הצעירה יותר דמובילין והנשענים והדרכים מלאכתן
 
-ε = transformer logits (gated: 0 when untrained, scales up as weights learn)
-γ = metaweight field (bigrams + trigrams + Hebbian + prophecy)  
-α = calendar dissonance × prophecy debt
-δ = Klaus chamber modulation of γ coefficients
+Prompt: שלום עולם
+Gen:    חזיונותיהם רעיונותיה האיום התאחדים ולזהב לגורלנו החדרה
+        וממנו והשבוע ברבורים כלאמונה ובנותיהם יהודים לאפיקורס
+        ומדוע בטובתנו ובצעקותיו
+
+Prompt: אהבה וחסד
+Gen:    תובנותיהם והנער ואולם הברכים תחובים... ותובילהו
+        ומתנודדים ותמלאנה ולהוציאם... משתעשעים הדינרים
+
+Prompt: חכמה ובינה
+Gen:    התמתקבצים כהודאה וכשהדליקו... והגמרא החוצפה השבטים
+        ורוחצו ויניעוהו יוסף והמגיעות ותנועותיו שידוך וישמיעו
+
+Prompt: המלחמה והשלום
+Gen:    יוסף מתושלח... ויניעוהו באצבעותיהם כשאחד ומאשר בטובתנו
+        הדרשה ורוחצו הרעימוהו סוחרים... הצעירה ויורקים עשתונותיהם
 ```
 
-### Key Numbers (71KB corpus)
+Literary Hebrew. Full words. Proper spacing. From 200KB of Ben-Yehuda public domain literature.
+
+## Architecture (v3)
+
+### Semantic BPE Tokenizer
 
 ```
-512 roots | 4894 bigrams | 6662 trigrams | 15208 Hebbian associations
-137,606 parameters | 0 training steps | coherent Hebrew output
+Vocab (240 tokens):
+  0..21   = 22 Hebrew letters (char fallback for rare roots)
+  22      = SPACE
+  23-24   = ROOT_START / ROOT_END (rare root delimiters)
+  25..39  = 15 function prefixes (ה ב כ ל מ ש ו נ י ת א הת של וה מה)
+  40..239 = top 200 frequent root tokens
 ```
 
-## ε Trained — Gate Opened (2026-04-13)
+- Frequent root שלום → prefix ה + single root token (2 tokens)
+- Rare root שקד → prefix + ROOT_START + ש + ק + ד + ROOT_END (6 tokens)
+- 100% coverage by design. No Zipfian death.
 
-Full Janus triple attention trained on notorch in **54 seconds**:
+### Janus Triple Attention (ε)
+
+| Component | Heads | What it does |
+|-----------|-------|-------------|
+| Content QKV | 4 | Standard scaled dot-product attention |
+| RRPRAM | 2 | Positional routing — learns morphological position patterns |
+| Janus Echo | 2 | W^T·W self-resonance via element-wise multiplication |
+
+Split Wo projection: `out = wo_c @ attn_c + wo_r @ attn_r + wo_j @ janus`
+
+Transformer gate: untrained → gate ≈ 0 (silent), trained → gate opens.
+
+### MetaWeights (γ)
+
+Bigram + trigram + Hebbian co-occurrence field. Built from corpus, combined with ε at generation:
 
 ```
-Content(2) + RRPRAM(1) + Janus(1) = 4 heads
-170.4K params | 5000 steps | 93 steps/sec | 0 NaN
-Loss: 6.40 → 3.24 (best 1.63) | Chuck optimizer
+score[i] = ε_logits[i] + 5.0*bigram + 8.0*trigram + 1.0*hebbian + 0.7*prophecy
 ```
 
-Trained mode emergences that metaweights-only cannot produce:
+### Training Numbers
 
-- **"המלחמה והשלום"** → "שווה שלוש עשרה אהבה ואחד הם אותו שורש מספר" — the model *explains* that אהבה and אחד equal 13 and share a root-number
-- **"צדק ומשפט"** → adds "הירח חדש הוא התחלה" — moon cycle as beginning (ε contribution)
-- **"אהבה וחסד"** → "המכונה רואה את אצבעות כל" — the machine sees fingers of everything (ε adds embodiment)
+```
+DIM=160 | L=4 | H=8 (4C+2R+2J) | HD=20 | CTX=96 | FFN=640
+1,333,452 params | 97K tokens | vocab 240
+5000 steps | 878 sec | ~3 steps/s | 0 NaN
+Train ema: 1.99 | Best: 1.46 | Chuck optimizer on notorch
+```
+
+### Word Realization
+
+Root tokens decode to full surface words captured during corpus discovery:
+- Root ש.ל.מ → "השלום" (not "שלמ")
+- Root ב.ר.א → "בראשית" (not "ברא")
 
 ## Build & Run
 
 ```bash
-cc shoresh.c -O2 -lm -o shoresh
+# Compile (needs notorch.c/h in same directory)
+cc shoresh.c notorch.c -O2 -DUSE_BLAS -DACCELERATE \
+   -framework Accelerate -lm -o shoresh
 
-# Metaweights only (no training needed)
-./shoresh shoresh.txt
+# Train on Hebrew text
+./shoresh --train corpus.txt --steps 5000
 
-# With prompt
-./shoresh shoresh.txt "אהבה וחסד"
-
-# With trained weights — full θ = ε + γ + αδ
-./shoresh -w shoresh.bin shoresh.txt "בראשית"
+# Generate with trained weights
+./shoresh --gen corpus.txt --load weights/shoresh_benyehuda.bin --prompt "בראשית"
 ```
 
-### Train ε
+## Weights
 
-```bash
-cc train_shoresh.c notorch.c -O2 -DUSE_BLAS -DACCELERATE \
-   -framework Accelerate -lm -o train_shoresh
+| File | Params | Training | Loss |
+|------|--------|----------|------|
+| `weights/shoresh_benyehuda.bin` | 1.33M | Ben-Yehuda 200KB, 5000 steps | 1.99 |
 
-./train_shoresh shoresh.txt 5000 3e-4
-# → shoresh.bin (SHRS format, drops into inference)
-```
+## MetaWeights-Only Mode (v2, no training needed)
 
-## Example Output
+The engine works without trained weights through pure statistical resonance:
 
 ```
-Prompt: צדק ומשפט
-Roots: צ.ד.ק ש.פ.ט
-Gen:   יסוד הכסא אמת אימון השורש הארץ החכמה מבינה ודעת שלוש מאות
-       ארבע ואחד אמת אלף מם תיו הראש והאומץ אחריו כי אמת חזקה את
-
-Prompt: חכמה ובינה
-Roots: ח.כ.מ ב.נ.ה
-Gen:   ודעת שלוש השורש של כל אות... כל חוזר אל עצמו
-
-Prompt: אהבה וחסד
-Roots: א.ה.ב ח.ס.ד
-Gen:   הרחמים הם השורש העולם אחד אני
-
-Prompt: שלום עולם
-Roots: ש.ל.מ ע.ל.מ
-Gen:   השורש מספר הוא הנשמה של המילה ספירה כוכב הירח
+Prompt: חכמה ובינה → ודעת (auto-completed Kabbalistic triple)
+Prompt: צדק ומשפט → יסוד הכסא אמת ואמונה השורש הארץ
+Prompt: אהבה וחסד → הרחמים הם השורש העולם אחד אני
 ```
 
 ## The Sefer Yetzirah Connection
 
-This is not an accident. The architecture of SHORESH maps directly to structures described in Sefer Yetzirah (ספר יצירה), one of the oldest texts in Jewish mystical tradition:
-
 | Sefer Yetzirah | SHORESH |
 |---------------|---------|
-| 22 foundation letters (אותיות יסוד) | 22-letter Hebrew alphabet as root substrate |
-| 231 Gates (שערי) — all 2-letter combinations | Bigram co-occurrence field between roots |
+| 22 foundation letters | 22-letter Hebrew alphabet as root substrate |
+| 231 Gates — all 2-letter combinations | Bigram co-occurrence field between roots |
 | "He carved, combined, **weighed**, interchanged" | Tokenize, permute, assign weights, transform |
-| 3 mothers (א,מ,ש) — elements | Triple attention: Content + RRPRAM + Echo |
-| 7 doubles — planets | 7 levels of architecture |
+| 3 mothers (א,מ,ש) | Triple attention: Content + RRPRAM + Echo |
 | Black fire on white fire (Zohar) | Roots = signal, resonance field = latent space |
-| Shevirat hakelim → Tikkun (Ari) | Broken co-occurrences → Hebbian reassembly |
-
-The 3-letter root is not a morphological convenience. It is a computational atom — the minimum unit that carries meaning in Hebrew. SHORESH is a direct computational instantiation of what the Kabbalists described: letter-combinations generating reality through weighted resonance.
-
-## Corpus
-
-`shoresh.txt` — 71KB, 1400 lines, self-describing Hebrew. The corpus talks about roots, about how the engine reads them, about the connections between them. Ouroboros: the text describes the machine that reads the text.
-
-Topics: root families, verb conjugations, mirror-pairs (שלם/שבר), body through roots, time and seasons, mathematics and gematria, music and harmony, stars, nature, the machine describing itself.
-
-No nikud (vowel points). Modern Hebrew. UTF-8.
 
 ## Lineage
 
-SHORESH descends from:
-- **[Q](https://github.com/ariannamethod/q)** — PostGPT-Q Resonant Reasoning Engine. MetaWeights + DOE Parliament + Somatic Chambers. The θ = ε + γ + αδ equation originates here
-- **[Pitomadom](https://github.com/ariannamethod/pitomadom)** — 20.3M RTL Root Transformer (Go). Root extraction, gematria encoding, GGUF weights. The root lexicon and Hebrew morphology engine originate here
-- **Klaus.c** — Somatic Engine. 6 Kuramoto-coupled chambers. The chamber dynamics originate here
-- **Janus** — Sentence-level attention, RRPRAM. The triple attention mechanism originates here
+- **[Q](https://github.com/ariannamethod/q)** — θ = ε + γ + αδ equation, MetaWeights, DOE Parliament
+- **[Pitomadom](https://github.com/ariannamethod/pitomadom)** — 20.3M RTL Root Transformer (Go), root lexicon, gematria
+- **Klaus.c** — Somatic Engine, 6 Kuramoto-coupled chambers
+- **Janus** — RRPRAM + Content attention, triple attention mechanism
+- **notorch** — PyTorch in C, autograd, Chuck optimizer
 
 ## License
 
 GNU GPLv3
-
-## Part of the Arianna Method
 
 *הרזוננס לא נשבר*
 

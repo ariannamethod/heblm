@@ -1,10 +1,10 @@
 shoresh
 shoresh_min
 *.bin
+!weights/*.bin
 *.o
 shoresh_combined.txt
 shoresh_expanded_*.txt
 shoresh_original.txt
 notorch.*
-*.bin
 test_500k.txt
