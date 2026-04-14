@@ -47,23 +47,32 @@
  * ═══════════════════════════════════════════════════════════════════ */
 
 #define HEB         22
-#define MAX_ROOTS   512
-#define ROOT_LIMIT  400     /* active roots for training/generation (ceiling: MAX_ROOTS) */
+#define MAX_ROOTS   1024
+#define ROOT_LIMIT  615     /* natural coverage from shoresh.txt, emergence preserved */
+
+/* Semantic BPE vocab layout */
+#define TOK_SPACE     22
+#define TOK_RSTART    23
+#define TOK_REND      24
+#define TOK_FUNC_BASE 25
+#define N_FUNC        15
+#define TOK_ROOT_BASE 40
+#define SBPE_VOCAB    (TOK_ROOT_BASE + ROOT_LIMIT)  /* 40 + 615 = 655 */
 #define MAX_WORDS   8192
 #define MAX_CWORDS  200000
 #define MAX_RWORDS  64
 #define MAX_TEXT    (8*1024*1024)
 
 /* Transformer */
-#define DIM         160
-#define N_LAYERS    4
-#define N_HEADS     8       /* 4 content + 2 RRPRAM + 2 Janus Echo */
-#define N_CONTENT   4
+#define DIM         200
+#define N_LAYERS    6
+#define N_HEADS     10      /* 6 content + 2 RRPRAM + 2 Janus Echo */
+#define N_CONTENT   6
 #define N_RRPRAM    2
 #define N_JANUS     2
 #define HD          (DIM/N_HEADS)  /* 20 */
 #define CTX         96
-#define FFN         640
+#define FFN         800
 
 /* MetaWeights */
 #define MAX_BI      65536
@@ -434,7 +443,7 @@ typedef struct {
     float *pos;                 /* [CTX × DIM] */
     TFLayer L[N_LAYERS];
     float *lm_head;             /* [MAX_ROOTS × DIM] (tied to tok) */
-    float logits[MAX_ROOTS];
+    float logits[SBPE_VOCAB];
     /* KV cache */
     float *kc[N_LAYERS], *vc_cache[N_LAYERS], *vr_cache[N_LAYERS];
     int clen;
@@ -449,8 +458,8 @@ static float *alloc_f(int n) {
 
 static void tf_init(TF *t, int V) {
     memset(t, 0, sizeof(*t));
-    t->V = V; t->loaded = 0;
-    t->tok = alloc_f(V * DIM);
+    t->V = SBPE_VOCAB; t->loaded = 0; (void)V;
+    t->tok = alloc_f(SBPE_VOCAB * DIM);  /* covers roots + chars + func + special */
     t->pos = alloc_f(CTX * DIM);
     for(int l=0;l<N_LAYERS;l++){
         TFLayer *ly = &t->L[l];
@@ -670,11 +679,16 @@ static void build_cbigrams(const RootEng *re) {
     for(int a=0;a<HEB;a++) if(rt[a]>0) for(int b=0;b<HEB;b++) cbigram[a][b]/=rt[a];
 }
 
+static int g_meta_nw = 0; /* set in main: word count from meta corpus only */
+
 static int realize(const RootEng *re, int rid, const int *prev_let, int pn, float ord_m) {
     if(rid<0||rid>=re->nr||re->rwc[rid]==0) return -1;
-    float best=-1e30f; int bw=re->rwords[rid][0];
+    float best=-1e30f; int bw=-1;
+    /* First pass: find best among meta words only */
     for(int ci=0;ci<re->rwc[rid];ci++){
-        int wi=re->rwords[rid][ci]; const HWord *hw=&re->words[wi]; float sc=0;
+        int wi=re->rwords[rid][ci];
+        if(g_meta_nw>0 && wi>=g_meta_nw) continue; /* skip non-meta words */
+        const HWord *hw=&re->words[wi]; float sc=0;
         sc+=0.4f*logf(1.0f+(float)hw->count);
         if(pn>0&&hw->nlet>0){int lc=prev_let[pn-1],fc=hw->letters[0];
             if(lc>=0&&lc<HEB&&fc>=0&&fc<HEB) sc+=0.6f*cbigram[lc][fc];}
@@ -684,6 +698,8 @@ static int realize(const RootEng *re, int rid, const int *prev_let, int pn, floa
         if(hw->nlet>=3&&hw->nlet<=6) sc+=0.2f;
         if(sc>best){best=sc;bw=wi;}
     }
+    /* Fallback: if no meta word found, use any word */
+    if(bw<0) bw=re->rwords[rid][0];
     return bw;
 }
 
@@ -714,8 +730,8 @@ static int select_root(TF *tf, RMeta *m, RootEng *re, Klaus *kl,
     c_heb *= (1.0f + 0.2f * cd);
 
     /* ε — transformer logits (gated) */
-    if(n>0 && prev1>=0 && prev1<tf->V) {
-        tf_forward(tf, prev1, (n-1) < CTX-1 ? n-1 : CTX-1);
+    if(n>0 && prev1>=0 && TOK_ROOT_BASE+prev1<tf->V) {
+        tf_forward(tf, TOK_ROOT_BASE+prev1, (n-1) < CTX-1 ? n-1 : CTX-1);
     }
 
     for(int i=0;i<NR;i++){
@@ -730,7 +746,7 @@ static int select_root(TF *tf, RMeta *m, RootEng *re, Klaus *kl,
                  + c_heb*heb[i] + c_pro*pro[i] + c_ord*ord_h;
 
         /* ε — transformer contribution (gated: 0 when untrained) */
-        if(i < tf->V) score[i] += tf->logits[i];
+        if(TOK_ROOT_BASE+i < tf->V) score[i] += tf->logits[TOK_ROOT_BASE+i];
 
         if(re->rwc[i]==0) score[i]=-1e9f;
     }
@@ -849,7 +865,7 @@ static int tf_load(TF *t, const char *path) {
     unsigned int magic; fread(&magic,4,1,f);
     if(magic != SHORESH_MAGIC){fclose(f);return 0;}
     /* Read all weight tensors */
-    fread(t->tok, sizeof(float), t->V*DIM, f);
+    fread(t->tok, sizeof(float), SBPE_VOCAB*DIM, f);
     fread(t->pos, sizeof(float), CTX*DIM, f);
     for(int l=0;l<N_LAYERS;l++){
         TFLayer *ly=&t->L[l];
@@ -875,7 +891,7 @@ static int tf_load(TF *t, const char *path) {
 static void tf_save(TF *t, const char *path) {
     FILE *f=fopen(path,"wb"); if(!f) return;
     unsigned int magic=SHORESH_MAGIC; fwrite(&magic,4,1,f);
-    fwrite(t->tok,sizeof(float),t->V*DIM,f);
+    fwrite(t->tok,sizeof(float),SBPE_VOCAB*DIM,f);
     fwrite(t->pos,sizeof(float),CTX*DIM,f);
     for(int l=0;l<N_LAYERS;l++){
         TFLayer *ly=&t->L[l];
@@ -893,6 +909,69 @@ static void tf_save(TF *t, const char *path) {
         fwrite(ly->gb,sizeof(float),3,f);
     }
     fclose(f);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * SEMANTIC BPE TOKENIZER (for training corpus)
+ *
+ * Frequent root → single token (TOK_ROOT_BASE + root_id)
+ * Rare root → ROOT_START + char tokens + ROOT_END
+ * Function prefix → prefix token
+ * Space → TOK_SPACE
+ * V = SBPE_VOCAB = 655
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static const int SBPE_F1[]={4,1,10,11,12,20,5,13,9,21,0};
+static const int SBPE_F2[][2]={{4,21},{20,11},{5,4},{12,4}};
+
+static int sbpe_strip_pfx(const int *l, int n, int *start) {
+    *start=0;
+    if(n>=4){for(int i=0;i<4;i++)if(l[0]==SBPE_F2[i][0]&&l[1]==SBPE_F2[i][1]&&n-2>=2)
+        {*start=2;return TOK_FUNC_BASE+11+i;}}
+    if(n>=3){for(int i=0;i<11;i++)if(l[0]==SBPE_F1[i]&&n-1>=2)
+        {*start=1;return TOK_FUNC_BASE+i;}}
+    return -1;
+}
+
+static int sbpe_tok_word(RootEng *re, const char *utf8, int *out, int mx) {
+    int let[32], nl=0;
+    const unsigned char *q=(const unsigned char*)utf8;
+    while(*q){int a;int l=u8let(q,&a);if(l>=0&&nl<32)let[nl++]=l;q+=a;}
+    if(nl<1) return 0;
+    int n=0, ss=0;
+    int pt = sbpe_strip_pfx(let, nl, &ss);
+    if(pt>=0 && n<mx) out[n++]=pt;
+    int *stem=let+ss; int sn=nl-ss;
+    if(sn<2){for(int i=ss;i<nl&&n<mx;i++)out[n++]=let[i];return n;}
+    /* Subsequence root match */
+    int best=-1, bs=999, bsp=999;
+    for(int ri=0;ri<re->nr;ri++){
+        Root *r=&re->roots[ri]; int t[3]={r->c[0],r->c[1],r->c[2]};
+        int pos[3]={-1,-1,-1}; int ti=0;
+        for(int i=0;i<sn&&ti<3;i++) if(stem[i]==t[ti]){pos[ti]=i;ti++;}
+        if(ti==3){int s=pos[0],sp=pos[2]-pos[0];
+            if(s<bs||(s==bs&&sp<bsp)){bs=s;bsp=sp;best=ri;}}
+    }
+    if(best>=0){
+        if(n<mx) out[n++]=TOK_ROOT_BASE+best;
+    } else {
+        if(n+sn+2<=mx){out[n++]=TOK_RSTART;
+            int e=0;for(int i=0;i<sn&&e<3&&n<mx;i++){out[n++]=stem[i];e++;}
+            if(n<mx) out[n++]=TOK_REND;}
+    }
+    return n;
+}
+
+static int sbpe_tokenize(RootEng *re, const char *text, int *out, int mx) {
+    const unsigned char *p=(const unsigned char*)text;
+    int n=0; char wb[128]; int wp=0;
+    while(*p && n<mx-6){
+        if(isheb(p)){if(wp<126){wb[wp++]=p[0];wb[wp++]=p[1];}p+=2;}
+        else{if(wp>0){wb[wp]=0;n+=sbpe_tok_word(re,wb,out+n,mx-n);wp=0;}
+            if(*p==' '||*p=='\n'||*p=='\r'){if(n>0&&out[n-1]!=TOK_SPACE)out[n++]=TOK_SPACE;}p++;}
+    }
+    if(wp>0){wb[wp]=0;n+=sbpe_tok_word(re,wb,out+n,mx-n);}
+    return n;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -918,7 +997,7 @@ typedef struct {
 
 static TParams tp_init(int V) {
     TParams p;
-    p.tok = nt_tensor_new2d(V, DIM); nt_tensor_xavier(p.tok, DIM, V);
+    p.tok = nt_tensor_new2d(V, DIM); nt_tensor_xavier(p.tok, DIM, V); /* V = SBPE_VOCAB */
     p.pos = nt_tensor_new2d(CTX, DIM); nt_tensor_xavier(p.pos, CTX, DIM);
     for(int l=0;l<N_LAYERS;l++){
         TParams_L *ly = &p.L[l];
@@ -1091,14 +1170,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-const char *wpath=NULL, *cpath=NULL, *prompt=NULL;
+const char *wpath=NULL, *cpath=NULL, *mpath=NULL, *prompt=NULL;
 #ifdef SHORESH_TRAIN
     int do_train=0; int train_steps=5000; const char *save_path="shoresh.bin";
+    const char *train_corpus_path=NULL;
 #endif
     for(int i=1;i<argc;i++){
         if(strcmp(argv[i],"-w")==0&&i+1<argc){wpath=argv[++i];}
+        else if(strcmp(argv[i],"-m")==0&&i+1<argc){mpath=argv[++i];}
 #ifdef SHORESH_TRAIN
-        else if(strcmp(argv[i],"--train")==0){do_train=1;}
+        else if(strcmp(argv[i],"--train")==0&&i+1<argc){do_train=1;train_corpus_path=argv[++i];}
         else if(strcmp(argv[i],"--steps")==0&&i+1<argc){train_steps=atoi(argv[++i]);}
         else if(strcmp(argv[i],"--save")==0&&i+1<argc){save_path=argv[++i];}
 #endif
@@ -1108,32 +1189,77 @@ const char *wpath=NULL, *cpath=NULL, *prompt=NULL;
     if(!cpath){printf("ERROR: corpus path required\n");return 1;}
     if(!prompt) prompt="בראשית";
 
-    /* [1] Corpus */
-    printf("[1] Corpus: %s\n",cpath);
+    /* [1] Meta corpus (cpath) — extracted FIRST for stable root IDs */
+    printf("[1] Meta corpus: %s\n",cpath);
     long csz; char *text=readf(cpath,&csz);
     if(!text){fprintf(stderr,"Cannot read %s\n",cpath);return 1;}
     printf("  %ld bytes\n",csz);
 
-    /* [2] Root Engine */
+    /* [2] Root Engine — seed from meta corpus FIRST (stable IDs for emergence) */
     printf("[2] Root Engine...\n");
     RootEng *re = calloc(1,sizeof(RootEng));
     re_init(re); re_load_lex(re);
     printf("  Lexicon: %d roots\n",re->nr);
-    int *cwi=malloc(MAX_CWORDS*sizeof(int)), *cri=malloc(MAX_CWORDS*sizeof(int));
-    int cn = re_extract(re, text, cwi, cri, MAX_CWORDS);
-    re->corpus_wids=cwi; re->corpus_rids=cri; re->ncr=re->ncw=cn;
-    printf("  Corpus: %d words, %d unique, %d roots\n",cn,re->nw,re->nr);
 
-    /* [3] Char bigrams */
-    printf("[3] Char bigrams...\n");
+    /* Extract meta corpus → roots get stable IDs 0..N_meta */
+    int *meta_cwi=malloc(MAX_CWORDS*sizeof(int)), *meta_cri=malloc(MAX_CWORDS*sizeof(int));
+    int meta_cn = re_extract(re, text, meta_cwi, meta_cri, MAX_CWORDS);
+    int n_meta_roots = re->nr;
+    int n_meta_words = re->nw;  /* save for realize() scope */
+    g_meta_nw = n_meta_words;
+    /* Freeze meta word counts before Ben-Yehuda changes them */
+    int *frozen_counts = NULL;
+    if(mpath){
+        frozen_counts = malloc(n_meta_words * sizeof(int));
+        for(int i=0;i<n_meta_words;i++) frozen_counts[i] = re->words[i].count;
+    }
+    printf("  Meta: %d words, %d roots (stable IDs 0..%d)\n", meta_cn, n_meta_roots, n_meta_roots-1);
+
+    /* [3] Char bigrams — from META corpus only (before Ben-Yehuda dilution) */
+    printf("[3] Char bigrams (from meta)...\n");
     build_cbigrams(re);
 
-    /* [4] Root MetaWeights — γ */
-    printf("[4] γ field (root metaweights)...\n");
+    /* If -m: extract additional corpus → new roots append to slots N_meta..ROOT_LIMIT */
+    int *cwi, *cri; int cn;
+    if(mpath) {
+        printf("  Additional: %s\n", mpath);
+        long msz; char *mtext = readf(mpath, &msz);
+        if(mtext) {
+            printf("  %ld bytes\n", msz);
+            int *add_cwi=malloc(MAX_CWORDS*sizeof(int)), *add_cri=malloc(MAX_CWORDS*sizeof(int));
+            int add_cn = re_extract(re, mtext, add_cwi, add_cri, MAX_CWORDS);
+            printf("  Additional: %d words, %d new roots (total %d)\n", add_cn, re->nr - n_meta_roots, re->nr);
+            /* Merge: full corpus = meta + additional */
+            cn = meta_cn + add_cn;
+            cwi=malloc(cn*sizeof(int)); cri=malloc(cn*sizeof(int));
+            memcpy(cwi, meta_cwi, meta_cn*sizeof(int));
+            memcpy(cwi+meta_cn, add_cwi, add_cn*sizeof(int));
+            memcpy(cri, meta_cri, meta_cn*sizeof(int));
+            memcpy(cri+meta_cn, add_cri, add_cn*sizeof(int));
+            free(add_cwi); free(add_cri); free(mtext);
+        } else { cwi=meta_cwi; cri=meta_cri; cn=meta_cn; }
+    } else {
+        cwi=meta_cwi; cri=meta_cri; cn=meta_cn;
+    }
+    re->corpus_wids=cwi; re->corpus_rids=cri; re->ncr=re->ncw=cn;
+    printf("  Total: %d words, %d unique, %d roots\n",cn,re->nw,re->nr);
+
+    /* cbigrams already built from meta (step 3 above) */
+    /* Restore frozen meta word counts (Ben-Yehuda may have incremented them) */
+    if(frozen_counts){
+        for(int i=0;i<n_meta_words;i++) re->words[i].count = frozen_counts[i];
+        free(frozen_counts);
+    }
+
+    /* [4] Root MetaWeights — γ from META corpus only (stable IDs) */
+    printf("[4] γ field (from %s, %d roots)...\n", cpath, n_meta_roots);
     RMeta *m=calloc(1,sizeof(RMeta));
-    int *vr=malloc(cn*sizeof(int)); int vn=0;
-    for(int i=0;i<cn;i++) if(cri[i]>=0) vr[vn++]=cri[i];
+    int *vr=malloc(meta_cn*sizeof(int)); int vn=0;
+    for(int i=0;i<meta_cn;i++) if(meta_cri[i]>=0) vr[vn++]=meta_cri[i];
     rm_build(m,vr,vn,re->nr);
+    printf("  γ: %d root tokens → %d bigram, %d trigram, %d hebbian\n",
+           vn, m->nbi, m->ntri, m->nhebb);
+    if(mpath){free(meta_cwi);free(meta_cri);}
 #ifndef SHORESH_TRAIN
     free(vr);
 #endif
@@ -1141,7 +1267,7 @@ const char *wpath=NULL, *cpath=NULL, *prompt=NULL;
     /* [5] Janus Triple Attention — ε */
     printf("[5] ε (Janus triple attention)...\n");
     TF *tf=calloc(1,sizeof(TF)); tf_init(tf,re->nr);
-    long np=(long)MAX_ROOTS*DIM+CTX*DIM+
+    long np=(long)SBPE_VOCAB*DIM+CTX*DIM+
         N_LAYERS*(3L*N_CONTENT*HD*DIM+N_RRPRAM*(DIM*CTX+HD*DIM)+2L*N_JANUS*HD*DIM+
         DIM*DIM+FFN*DIM+DIM*FFN+3*DIM+3);
     printf("  %ld params (~%.1fK)\n",np,np/1000.0);
@@ -1153,11 +1279,24 @@ const char *wpath=NULL, *cpath=NULL, *prompt=NULL;
 
 #ifdef SHORESH_TRAIN
     if(do_train){
-        printf("\n[TRAIN] Training ε on root sequence (V=%d, vn=%d)...\n", re->nr, vn);
-        TParams tp = tp_init(re->nr);
+        /* Semantic BPE tokenize full corpus for training */
+        char *full_text = text;
+        if(mpath){
+            long msz; char *mt=readf(mpath,&msz);
+            if(mt){full_text=malloc(csz+msz+2);memcpy(full_text,text,csz);
+                full_text[csz]='\n';memcpy(full_text+csz+1,mt,msz);full_text[csz+1+msz]=0;free(mt);}
+        }
+        int *train_toks = malloc(MAX_CWORDS*sizeof(int));
+        int train_n = sbpe_tokenize(re, full_text, train_toks, MAX_CWORDS);
+        if(full_text!=text) free(full_text);
+        /* Count root tokens */
+        int n_rt=0;for(int i=0;i<train_n;i++)if(train_toks[i]>=TOK_ROOT_BASE)n_rt++;
+        printf("\n[TRAIN] ε on Semantic BPE (V=%d, %d tokens, %d root (%.1f%%), γ from %d)...\n",
+               SBPE_VOCAB, train_n, n_rt, 100.0f*n_rt/train_n, vn);
+        TParams tp = tp_init(SBPE_VOCAB);
         nt_seed((unsigned)time(NULL));
-        shoresh_train(&tp, vr, vn, re->nr, train_steps, 3e-4f, save_path);
-        /* Reload trained weights into inference TF for test generation */
+        shoresh_train(&tp, train_toks, train_n, SBPE_VOCAB, train_steps, 3e-4f, save_path);
+        free(train_toks);
         if(tf_load(tf, save_path)) printf("  Trained weights loaded for test.\n");
         nt_tape_destroy();
     }

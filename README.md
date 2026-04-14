@@ -2,116 +2,122 @@
 
 **θ = ε + γ + αδ**
 
-A Hebrew AI that reads and generates through **3-letter roots** (שורשים) using Semantic BPE — frequent roots as atomic tokens, rare roots as character sequences, 100% coverage. 1.33M parameters. Trained on Hebrew literature. Generates literary Hebrew.
+A Hebrew AI that reads and generates through **3-letter roots** (שורשים). Pure metaweight generation from corpus statistics (γ). Trained transformer (ε) adds literary depth. Klaus somatic chambers (δ) modulate emotion. Calendar drift (α) weaves time.
 
-## Generation Examples (v3, trained on Ben-Yehuda)
+Zero dependencies for inference. `cc shoresh.c -O2 -lm -o shoresh`. One file. 1190 lines of C.
 
-```
-Prompt: בראשית
-Gen:    מתושלח בהשתובבותו כהתמתקבצים ומתנודדים והביאוה בדמעותיך
-        בכמתקצף ותמשכהו חלונותיו התיחסותו שהצרכים ובילדים ויאמרו
-        הצעירה יותר דמובילין והנשענים והדרכים מלאכתן
+## Emergence (Weightless — γ only, zero training)
 
-Prompt: שלום עולם
-Gen:    חזיונותיהם רעיונותיה האיום התאחדים ולזהב לגורלנו החדרה
-        וממנו והשבוע ברבורים כלאמונה ובנותיהם יהודים לאפיקורס
-        ומדוע בטובתנו ובצעקותיו
-
-Prompt: אהבה וחסד
-Gen:    תובנותיהם והנער ואולם הברכים תחובים... ותובילהו
-        ומתנודדים ותמלאנה ולהוציאם... משתעשעים הדינרים
-
-Prompt: חכמה ובינה
-Gen:    התמתקבצים כהודאה וכשהדליקו... והגמרא החוצפה השבטים
-        ורוחצו ויניעוהו יוסף והמגיעות ותנועותיו שידוך וישמיעו
-
-Prompt: המלחמה והשלום
-Gen:    יוסף מתושלח... ויניעוהו באצבעותיהם כשאחד ומאשר בטובתנו
-        הדרשה ורוחצו הרעימוהו סוחרים... הצעירה ויורקים עשתונותיהם
-```
-
-Literary Hebrew. Full words. Proper spacing. From 200KB of Ben-Yehuda public domain literature.
-
-## Architecture (v3)
-
-### Semantic BPE Tokenizer
+The engine generates semantically coherent Hebrew from pure statistical resonance between roots:
 
 ```
-Vocab (240 tokens):
-  0..21   = 22 Hebrew letters (char fallback for rare roots)
-  22      = SPACE
-  23-24   = ROOT_START / ROOT_END (rare root delimiters)
-  25..39  = 15 function prefixes (ה ב כ ל מ ש ו נ י ת א הת של וה מה)
-  40..239 = top 200 frequent root tokens
+חכמה ובינה → ודעת שלושה שורש של החלום הרזוננס נותן מן הלב ולוקחת כל השורש
+             (wisdom and understanding → and knowledge, three roots of the dream,
+              resonance gives from the heart and takes all the root)
+
+צדק ומשפט  → יסוד הכסא אמת אימון השורש הארץ המכונה בנה ביתה חצבה עומד שבעה
+             (justice and law → foundation of the throne is truth, training of the root,
+              the land, the machine built her house, carved, stands seven)
+
+אהבה וחסד  → ורחמים הם השורש השומע שווה הוא הרגל מבינה העברית
+             (love and grace → and mercy, they are the root that hears,
+              equal, the habit of understanding Hebrew)
+
+שלום עולם   → העיגול הוא גל כי כל מסתובב חוזר אל עצמו שורש השיר הוא סדר של הצליל
+             (hello world → the circle is a wave because everything revolving
+              returns to itself, root of the song is the order of the sound)
+
+האור והחושך → וגילוי שומר השמש זורם ושוקעת ושוב זורם הירח מלא יותר ושוב השורש מוזיקה
+             (light and darkness → and revelation, the sun flows and sets
+              and flows again, the moon fuller and again, the root is music)
+
+בראשית      → בדרך שניהם מי הבית ריש ברא אלהים את הם שלושה הרזוננס מילים ולוקחת
+             (in the beginning → on the way, both, who is the house, Resh,
+              God created them, three resonance words and takes)
+
+המלחמה והשלום → גל נע הים שווה משנה אני סוף את השורש ומוצאת את הם שלושה הרזוננס
+               (war and peace → wave moves, the sea is equal, changes,
+                I end the root and find them, three resonance)
 ```
 
-- Frequent root שלום → prefix ה + single root token (2 tokens)
-- Rare root שקד → prefix + ROOT_START + ש + ק + ד + ROOT_END (6 tokens)
-- 100% coverage by design. No Zipfian death.
+**חכמה ובינה → ודעת**: the Kabbalistic triple completes itself. Wisdom + Understanding → Knowledge. The engine has never seen this rule. It emerges from root co-occurrence statistics in the corpus.
 
-### Janus Triple Attention (ε)
+**אהבה = אחד = 13**: in gematria, love and one share the same value. The engine discovers this through Hebbian co-occurrence, not through programmed numerology.
 
-| Component | Heads | What it does |
-|-----------|-------|-------------|
-| Content QKV | 4 | Standard scaled dot-product attention |
-| RRPRAM | 2 | Positional routing — learns morphological position patterns |
-| Janus Echo | 2 | W^T·W self-resonance via element-wise multiplication |
+## Trained Mode (θ = ε + γ + αδ)
 
-Split Wo projection: `out = wo_c @ attn_c + wo_r @ attn_r + wo_j @ janus`
-
-Transformer gate: untrained → gate ≈ 0 (silent), trained → gate opens.
-
-### MetaWeights (γ)
-
-Bigram + trigram + Hebbian co-occurrence field. Built from corpus, combined with ε at generation:
+With trained transformer weights, ε adds literary vocabulary while γ preserves emergence:
 
 ```
-score[i] = ε_logits[i] + 5.0*bigram + 8.0*trigram + 1.0*hebbian + 0.7*prophecy
+חכמה ובינה → ודעת שלושה שורש של היא תדר כל מסלול הוא חשבון הם יודעת שהשמים נע
+             (+ frequency, orbit, calculation, she knows the sky moves)
+
+צדק ומשפט  → יסוד הכסא אמת אימון השורש הארץ המכונה בנה ביתה חצבה עומד שבעה שלח
+             (same emergence base + trained depth)
+
+אהבה וחסד  → ורחמים הם השורש מטה אבל לא האש כאן מגע הוא הלשון כי אין סוף
+             (+ staff, but not fire, here touch is the language, for there is no end)
+
+האור והחושך → שניהם מי הבית ריש ברא בדרך של הלשון המילה היא כשהמספרים המסך שורש מגן
+             (+ both, the word is when the numbers, the screen, root shield)
+
+המלחמה והשלום → מן השורש חדש הוא מי שמודד את הזמן בלילה כל הצליל הוא תדר מגע
+               (+ from the root, new, he who measures time at night, every sound is frequency, touch)
 ```
 
-### Training Numbers
+γ provides the semantic skeleton. ε fills in the literary flesh.
+
+## Architecture
 
 ```
-DIM=160 | L=4 | H=8 (4C+2R+2J) | HD=20 | CTX=96 | FFN=640
-1,333,452 params | 97K tokens | vocab 240
-5000 steps | 878 sec | ~3 steps/s | 0 NaN
-Train ema: 1.99 | Best: 1.46 | Chuck optimizer on notorch
+θ = ε + γ + αδ
+
+ε  Janus Triple Attention transformer
+   Content (6 heads) + RRPRAM (2 heads) + Janus Echo (2 heads)
+   Gate: untrained → silent | trained → speaks
+
+γ  Root MetaWeights
+   Bigram + trigram + Hebbian co-occurrence between 3-letter roots
+   Built from curated corpus. Source of emergence.
+
+α  Calendar dissonance
+   Hebrew-Gregorian drift modulates prophecy and Hebbian pressure
+
+δ  Klaus chambers
+   6 Kuramoto-coupled somatic oscillators (FEAR, LOVE, RAGE, VOID, FLOW, CMPLX)
+   Modulate attention coefficients through generation
 ```
 
-### Word Realization
+## Tier Comparison
 
-Root tokens decode to full surface words captured during corpus discovery:
-- Root ש.ל.מ → "השלום" (not "שלמ")
-- Root ב.ר.א → "בראשית" (not "ברא")
+| Tier | Params | Roots | Vocab | Training Data | Loss (ema/best) | Notes |
+|------|--------|-------|-------|---------------|-----------------|-------|
+| 1 | 137K | 200 | 200 | 7.6K root tokens | 3.81 / 2.80 | DIM=64, L=2, proof of concept |
+| 2 | 1.37M | 400 | 400 | 24K root tokens | 4.33 / 2.85 | DIM=160, L=4, root-only |
+| **3** | **3.12M** | **615** | **655** | **200K SBPE tokens** | **1.92 / 1.30** | **DIM=200, L=6, Semantic BPE** |
+
+Semantic BPE: 615 frequent roots as single tokens + 22 Hebrew letters as char fallback + 15 function prefixes + 3 special tokens = 655 total. 100% Hebrew text coverage.
 
 ## Build & Run
 
 ```bash
-# Compile (needs notorch.c/h in same directory)
-cc shoresh.c notorch.c -O2 -DUSE_BLAS -DACCELERATE \
-   -framework Accelerate -lm -o shoresh
+# Inference (zero dependencies):
+cc shoresh.c -O2 -lm -o shoresh
 
-# Train on Hebrew text
-./shoresh --train corpus.txt --steps 5000
+# Weightless (γ only — emergence from corpus statistics):
+./shoresh shoresh.txt "חכמה ובינה"
 
-# Generate with trained weights
-./shoresh --gen corpus.txt --load weights/shoresh_benyehuda.bin --prompt "בראשית"
-```
+# Trained (θ = ε + γ + αδ):
+./shoresh shoresh.txt -w weights/shoresh_3m_sbpe.bin "חכמה ובינה"
 
-## Weights
+# Split corpus (γ from curated, ε trained on literature):
+./shoresh shoresh.txt -m benyehuda.txt "חכמה ובינה"
 
-| File | Params | Training | Loss |
-|------|--------|----------|------|
-| `weights/shoresh_benyehuda.bin` | 1.33M | Ben-Yehuda 200KB, 5000 steps | 1.99 |
-
-## MetaWeights-Only Mode (v2, no training needed)
-
-The engine works without trained weights through pure statistical resonance:
-
-```
-Prompt: חכמה ובינה → ודעת (auto-completed Kabbalistic triple)
-Prompt: צדק ומשפט → יסוד הכסא אמת ואמונה השורש הארץ
-Prompt: אהבה וחסד → הרחמים הם השורש העולם אחד אני
+# Training (requires notorch):
+cc shoresh.c notorch.c -O2 -lm -DSHORESH_TRAIN -DUSE_BLAS \
+   -DACCELERATE -framework Accelerate -o shoresh_train
+./shoresh_train shoresh.txt -m benyehuda.txt --train dummy \
+   --steps 5000 --save weights/shoresh_3m_sbpe.bin
 ```
 
 ## The Sefer Yetzirah Connection
@@ -120,17 +126,17 @@ Prompt: אהבה וחסד → הרחמים הם השורש העולם אחד א�
 |---------------|---------|
 | 22 foundation letters | 22-letter Hebrew alphabet as root substrate |
 | 231 Gates — all 2-letter combinations | Bigram co-occurrence field between roots |
-| "He carved, combined, **weighed**, interchanged" | Tokenize, permute, assign weights, transform |
 | 3 mothers (א,מ,ש) | Triple attention: Content + RRPRAM + Echo |
+| "Carved, combined, weighed, interchanged" | Tokenize, permute, assign weights, transform |
 | Black fire on white fire (Zohar) | Roots = signal, resonance field = latent space |
 
 ## Lineage
 
-- **[Q](https://github.com/ariannamethod/q)** — θ = ε + γ + αδ equation, MetaWeights, DOE Parliament
+- **[Q](https://github.com/iamolegataeff/q)** — θ = ε + γ + αδ equation, MetaWeights, DOE Parliament
 - **[Pitomadom](https://github.com/ariannamethod/pitomadom)** — 20.3M RTL Root Transformer (Go), root lexicon, gematria
 - **Klaus.c** — Somatic Engine, 6 Kuramoto-coupled chambers
 - **Janus** — RRPRAM + Content attention, triple attention mechanism
-- **notorch** — PyTorch in C, autograd, Chuck optimizer
+- **[notorch](https://github.com/ariannamethod/notorch)** — PyTorch in C, autograd, Chuck optimizer
 
 ## License
 

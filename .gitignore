@@ -1,14 +1,64 @@
+# Binaries
 shoresh
 shoresh_min
 shoresh_train
+shoresh_train_dbg
 shoresh_inf
 shoresh_v2*
+shoresh_v3
+shoresh_v3_count
+shoresh_v3_trained
 shoresh_fixed
+shoresh_test_*
+shoresh_original_v2.c
+count_cov
+count_roots
+count_roots_big
+train_2m
+train_shoresh
+train_shoresh_v3
+train_v3
+test_sbpe
+diag
+diag2
+*.o
+*.dSYM/
+
+# Weight files (except weights/ dir)
 *.bin
 !weights/*.bin
-*.o
+# Only keep latest tier weights
+weights/shoresh_137k_200r.bin
+weights/shoresh_1.5m_400r.bin
+
+# Temp/intermediate
 shoresh_combined.txt
 shoresh_expanded_*.txt
 shoresh_original.txt
-notorch.*
+corpus_boost*.txt
+corpus_full.txt
+train_corpus.txt
 test_500k.txt
+wiki_300k.txt
+benyehuda_200k.txt
+shoresh_v3_placeholder.txt
+
+# Source files not needed in repo
+notorch.*
+count_coverage.c
+count_roots.c
+count_roots_big.c
+dump_tokens.c
+test_sbpe.c
+diag.c
+diag2.c
+shoresh_v3.c
+shoresh_v3_trained.c
+train_v3.c
+kr_5k.h
+kr_expanded.h
+bdb_roots.txt
+roots_combined.txt
+root_surface_map.txt
+top200_roots.txt
+train_2m.c
