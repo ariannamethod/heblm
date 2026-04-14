@@ -1,5 +1,9 @@
 shoresh
 shoresh_min
+shoresh_train
+shoresh_inf
+shoresh_v2*
+shoresh_fixed
 *.bin
 !weights/*.bin
 *.o
