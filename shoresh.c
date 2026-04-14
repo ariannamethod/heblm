@@ -48,22 +48,22 @@
 
 #define HEB         22
 #define MAX_ROOTS   512
-#define ROOT_LIMIT  200     /* active roots for training/generation (ceiling: MAX_ROOTS) */
+#define ROOT_LIMIT  400     /* active roots for training/generation (ceiling: MAX_ROOTS) */
 #define MAX_WORDS   8192
 #define MAX_CWORDS  200000
 #define MAX_RWORDS  64
 #define MAX_TEXT    (8*1024*1024)
 
 /* Transformer */
-#define DIM         64
-#define N_LAYERS    2
-#define N_HEADS     4       /* 2 content + 1 RRPRAM + 1 Janus Echo */
-#define N_CONTENT   2
-#define N_RRPRAM    1
-#define N_JANUS     1
-#define HD          (DIM/N_HEADS)  /* 16 */
-#define CTX         64
-#define FFN         (4*DIM)
+#define DIM         160
+#define N_LAYERS    4
+#define N_HEADS     8       /* 4 content + 2 RRPRAM + 2 Janus Echo */
+#define N_CONTENT   4
+#define N_RRPRAM    2
+#define N_JANUS     2
+#define HD          (DIM/N_HEADS)  /* 20 */
+#define CTX         96
+#define FFN         640
 
 /* MetaWeights */
 #define MAX_BI      65536
@@ -925,7 +925,7 @@ static TParams tp_init(int V) {
         ly->wq = nt_tensor_new2d(N_CONTENT*HD, DIM); nt_tensor_xavier(ly->wq, DIM, N_CONTENT*HD);
         ly->wk = nt_tensor_new2d(N_CONTENT*HD, DIM); nt_tensor_xavier(ly->wk, DIM, N_CONTENT*HD);
         ly->vc = nt_tensor_new2d(N_CONTENT*HD, DIM); nt_tensor_xavier(ly->vc, DIM, N_CONTENT*HD);
-        ly->wr = nt_tensor_new2d(N_RRPRAM*DIM, CTX); nt_tensor_xavier(ly->wr, CTX, N_RRPRAM*DIM);
+        ly->wr = nt_tensor_new2d(N_RRPRAM*HD, DIM); nt_tensor_xavier(ly->wr, DIM, N_RRPRAM*HD); /* proxy: self-attn, not positional routing */
         ly->vr = nt_tensor_new2d(N_RRPRAM*HD, DIM);  nt_tensor_xavier(ly->vr, DIM, N_RRPRAM*HD);
         ly->wj = nt_tensor_new2d(N_JANUS*HD, DIM);   nt_tensor_xavier(ly->wj, DIM, N_JANUS*HD);
         ly->vj = nt_tensor_new2d(N_JANUS*HD, DIM);   nt_tensor_xavier(ly->vj, DIM, N_JANUS*HD);
@@ -969,26 +969,20 @@ static int forward_train(TI *ti, int *tokens, int *targets, int T, int V) {
     int h = nt_seq_embedding(ti->tok, ti->pos, tok_idx, T, DIM);
     for(int l=0;l<N_LAYERS;l++){
         int normed = nt_seq_rmsnorm(h, -1, T, DIM);
-        /* Content (2 heads) */
         int q_c = nt_seq_linear(ti->L[l].wq, normed, T);
         int k_c = nt_seq_linear(ti->L[l].wk, normed, T);
         int v_c = nt_seq_linear(ti->L[l].vc, normed, T);
         int attn_c = nt_mh_causal_attention(q_c, k_c, v_c, T, HD);
-        /* RRPRAM (1 head): wr^T@x → vr reduces → self-attn */
-        int wr_s = nt_seq_linear_t(ti->L[l].wr, normed, T);
-        int q_r = nt_seq_linear(ti->L[l].vr, wr_s, T);
+        int q_r = nt_seq_linear(ti->L[l].wr, normed, T);
         int v_r = nt_seq_linear(ti->L[l].vr, normed, T);
         int attn_r = nt_mh_causal_attention(q_r, q_r, v_r, T, HD);
-        /* Janus (1 head): proj * echo */
         int proj_j = nt_seq_linear(ti->L[l].wj, normed, T);
         int echo_j = nt_seq_linear(ti->L[l].vj, normed, T);
         int janus = nt_mul(proj_j, echo_j);
-        /* Combine → residual */
         int pc = nt_seq_linear(ti->L[l].wo_c, attn_c, T);
         int pr = nt_seq_linear(ti->L[l].wo_r, attn_r, T);
         int pj = nt_seq_linear(ti->L[l].wo_j, janus, T);
         h = nt_add(h, nt_add(nt_add(pc, pr), pj));
-        /* MLP */
         normed = nt_seq_rmsnorm(h, -1, T, DIM);
         int ff = nt_seq_linear(ti->L[l].w1, normed, T);
         ff = nt_gelu(ff);
@@ -1014,7 +1008,9 @@ static void tp_save(TParams *p, const char *path, int V) {
         fwrite(ly->wq->data,4,N_CONTENT*HD*DIM,f);
         fwrite(ly->wk->data,4,N_CONTENT*HD*DIM,f);
         fwrite(ly->vc->data,4,N_CONTENT*HD*DIM,f);
-        fwrite(ly->wr->data,4,N_RRPRAM*DIM*CTX,f);
+        /* wr: inference expects [N_RRPRAM*DIM, CTX], training proxy is [N_RRPRAM*HD, DIM].
+         * Write zeros — inference gate will suppress untrained RRPRAM. */
+        {float zero=0; for(int i=0;i<N_RRPRAM*DIM*CTX;i++) fwrite(&zero,4,1,f);}
         fwrite(ly->vr->data,4,N_RRPRAM*HD*DIM,f);
         fwrite(ly->wj->data,4,N_JANUS*HD*DIM,f);
         fwrite(ly->vj->data,4,N_JANUS*HD*DIM,f);
