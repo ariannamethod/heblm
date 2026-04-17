@@ -264,7 +264,7 @@ Output: Hebrew text (roots become words again)
 
 ## The Sefer Yetzirah connection
 
-Three Opus agents independently confirmed: this architecture maps directly to the oldest known book on Hebrew combinatorics.
+**PITOMADOM** architecture maps directly to the oldest known book on Hebrew combinatorics.
 
 | Sefer Yetzirah | pitomadom.c |
 |---------------|-------------|
