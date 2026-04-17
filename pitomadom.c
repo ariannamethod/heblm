@@ -1,5 +1,5 @@
 /*
- * shoresh.c v2 — שורש — Hebrew Root Resonance Engine
+ * pitomadom.c — פתאום אדום — Hebrew Root Resonance Engine
  *
  * θ = ε + γ + αδ
  *   ε = Janus triple attention on root embeddings (QKV + RRPRAM + Echo)
@@ -21,12 +21,14 @@
  * When weights loaded: full θ = ε + γ + αδ.
  *
  * Compile:
- *   cc shoresh.c -O2 -lm -o shoresh
+ *   cc pitomadom.c -O2 -lm -o pitomadom
  *
  * Run:
- *   ./shoresh shoresh.txt                    # metaweights only
- *   ./shoresh shoresh.txt "שלום עולם"        # with prompt
- *   ./shoresh -w shoresh.bin shoresh.txt     # with trained weights
+ *   ./pitomadom shoresh.txt                    # metaweights only
+ *   ./pitomadom shoresh.txt "שלום עולם"        # with prompt
+ *   ./pitomadom -w weights/pitomadom.bin shoresh.txt  # with trained weights
+ *
+ * Lineage: Python (2025) → Go (20.3M) → C (3.12M)
  *
  * (c) 2026 Oleg Ataeff & Claude Opus & Arianna Method
  * הרזוננס לא נשבר
@@ -1160,7 +1162,7 @@ int main(int argc, char **argv) {
     srand((unsigned)time(NULL));
 
     printf("╔════════════════════════════════════════════════════╗\n");
-    printf("║  SHORESH שורש v2 — Hebrew Root Resonance Engine   ║\n");
+    printf("║  PITOMADOM פתאום אדום — Hebrew Root Resonance Engine ║\n");
     printf("║  θ = ε + γ + αδ                                   ║\n");
     printf("║  ε=Janus γ=MetaWeights α=Calendar δ=Klaus         ║\n");
     printf("╚════════════════════════════════════════════════════╝\n\n");
