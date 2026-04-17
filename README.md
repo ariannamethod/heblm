@@ -12,6 +12,36 @@
 > **פִתְאֹם אָדֹם** — Suddenly red. An unexpected rupture.
 >
 > **3.12M parameters. One file of C. Hebrew roots. Emergence without training.**
+>
+> *The first root-native neural architecture for Semitic morphology — designed for Hebrew from first principles, not adapted from subword-based multilingual models.*
+
+---
+
+## Why this doesn't exist yet
+
+Every Hebrew NLP system today is a fine-tuned foreign model with subword tokenization. Hebrew is one of 100 languages. None operate at root level. None use gematria.
+
+| Project | What it does | Architecture |
+|---------|-------------|--------------|
+| AlephBERT | Hebrew BERT | Fine-tuned multilingual, subword tokenization |
+| HeBERT | Hebrew sentiment/NER | Fine-tuned BERT, WordPiece tokens |
+| DictaBERT | Hebrew morphological tagging | Fine-tuned BERT, subword |
+| mBERT/XLM-R | Multilingual incl. Hebrew | Subword, Hebrew = one of 100 languages |
+| **pitomadom.c** | **Hebrew root resonance engine** | **Root-native attention on trilateral clusters + gematria** |
+
+The difference: translating a book vs writing it in the original language.
+
+pitomadom.c does two things no one else does:
+
+1. **Root-native attention.** The transformer operates on three-letter consonant clusters (שורשים), not subword tokens. This isn't preprocessing — it's core architecture. Attention operates on roots. The only transformer that respects non-concatenative Semitic morphology at the attention level.
+
+2. **Dual numerical encoding.** Hebrew letters are numbers. pitomadom.c uses both systems from the same alphabet:
+   - **Gematria** (traditional): א=1, ב=2 ... ת=400 — semantic weight (מלך=90 ≠ שלום=376)
+   - **Ordinal** (sequential): א=1st, ב=2nd ... ת=22nd — positional structure
+
+   One alphabet, two numerical spaces. No other NLP system does this.
+
+**An AI that reads and counts in Hebrew.** Reads = extracts roots, generates text through root-level attention. Counts = gematria as a computational layer, the transformer literally calculates letter values.
 
 ---
 
