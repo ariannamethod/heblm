@@ -282,8 +282,8 @@ static int re_find_root(RootEng *r, const int *let, int n) {
 }
 
 static int re_add_word(RootEng *r, const char *u) {
-    if(r->nw>=MAX_WORDS) return -1;
     for(int i=0;i<r->nw;i++) if(strcmp(r->words[i].utf8,u)==0){r->words[i].count++;return i;}
+    if(r->nw>=MAX_WORDS) return -1;
     int wi=r->nw++; HWord *w=&r->words[wi];
     strncpy(w->utf8,u,63);w->utf8[63]=0;
     w->nlet=w2let(u,w->letters,32); w->count=1;
