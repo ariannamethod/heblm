@@ -7,7 +7,7 @@
 ╚═╝      ╚═╝    ╚═╝     ╚═════╝  ╚═╝     ╚═╝ ╚═╝  ╚═╝ ╚═════╝   ╚═════╝  ╚═╝     ╚═╝ ╚═╝ ╚═════╝
 ```
 
-# PITOMADOM.C | by Arianna Method
+# PITOMADOM.C | Janus Architecture | by Arianna Method
 
 > **פִתְאֹם אָדֹם** — Suddenly red. An unexpected rupture.
 >
@@ -17,7 +17,7 @@
 
 ---
 
-## Why this doesn't exist yet
+## Here's why it doesn't exist yet
 
 Every Hebrew NLP system today is a fine-tuned foreign model with subword tokenization. Hebrew is one of 100 languages. None operate at root level. None use gematria.
 
@@ -41,7 +41,7 @@ pitomadom.c does two things no one else does:
 
    One alphabet, two numerical spaces. No other NLP system does this.
 
-**An AI that reads and counts in Hebrew.** Reads = extracts roots, generates text through root-level attention. Counts = gematria as a computational layer, the transformer literally calculates letter values.
+**An AI that reads and counts in Hebrew.** Reads = extracts roots, generates text through root-level attention. Counts = gematria as math computational layer, the transformer literally calculates letter values.
 
 ---
 
